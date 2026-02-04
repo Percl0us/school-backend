@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentMode {
+  ONLINE
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REVERSED
+}
+
+enum FeeAccountStatus {
+  OPEN
+  CLOSED
+}
+
+enum FeeFrequency {
+  MONTHLY
+  TERM
+}
+
+
+model Student {
+  admissionNo   String   @id
+  name          String
+  dob           DateTime
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  academics     StudentAcademic[]
+  feeAccounts   StudentFeeAccount[]
+  discounts     Discount[]
+  payments      Payment[]
+}
+
+model StudentAcademic {
+  id             String   @id @default(uuid())
+  admissionNo    String
+  academicYear   String
+  class          String
+  section        String?
+  feeStartMonth  Int
+  transportOpted Boolean
+  transportFee   Int?     // ✅ student-wise, annual
+
+  student        Student @relation(fields: [admissionNo], references: [admissionNo])
+
+  @@unique([admissionNo, academicYear])
+}
+
+model FeeStructure {
+  id            String        @id @default(uuid())
+  academicYear  String
+  class         String
+  tuitionFee    Int           // ✅ tuition only
+  frequency     FeeFrequency
+
+  @@unique([academicYear, class])
+}
+
+model StudentFeeAccount {
+  id           String           @id @default(uuid())
+  admissionNo  String
+  academicYear String
+  totalFee     Int
+  totalPaid    Int              @default(0)
+  balance      Int
+  status       FeeAccountStatus @default(OPEN)
+
+  student      Student @relation(fields: [admissionNo], references: [admissionNo])
+
+  @@unique([admissionNo, academicYear])
+}
+
+model Discount {
+  id            String   @id @default(uuid())
+  admissionNo   String
+  academicYear  String
+  amount        Int
+  active        Boolean  @default(true)
+  appliedBy     String
+  appliedAt     DateTime @default(now())
+
+  student       Student @relation(fields: [admissionNo], references: [admissionNo])
+}
+
+model Payment {
+  id                 String        @id @default(uuid())
+  admissionNo        String
+  academicYear       String
+  amount             Int
+  mode               PaymentMode
+  status             PaymentStatus
+  razorpayOrderId    String?
+  razorpayPaymentId  String?
+  receiptNumber      String?
+  monthsCovered      Json
+  collectedBy        String?
+  createdAt          DateTime      @default(now())
+
+  student             Student @relation(fields: [admissionNo], references: [admissionNo])
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
