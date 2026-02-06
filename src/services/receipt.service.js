@@ -3,6 +3,7 @@ import path from "path";
 import { prisma } from "../lib/prisma.js";
 
 export const generateReceiptPDF = async (paymentId, res) => {
+  // 1️⃣ Fetch payment
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
   });
@@ -24,14 +25,23 @@ export const generateReceiptPDF = async (paymentId, res) => {
     },
   });
 
+  // 2️⃣ Prepare PDF
   const doc = new PDFDocument({ margin: 50 });
 
-  // ✅ FORCE FILE DOWNLOAD
+  /* =========================
+     RESPONSE HEADERS (IMPORTANT)
+  ========================= */
+
+  // Force download
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
     `attachment; filename="receipt-${payment.receiptNumber}.pdf"`
   );
+
+  // ✅ Silence CSP + script warnings (PDF-safe)
+  res.setHeader("Content-Security-Policy", "default-src 'none'");
+  res.setHeader("X-Content-Type-Options", "nosniff");
 
   doc.pipe(res);
 
@@ -43,7 +53,9 @@ export const generateReceiptPDF = async (paymentId, res) => {
 
   try {
     doc.image(logoPath, 50, 40, { width: 60 });
-  } catch {}
+  } catch {
+    // logo optional
+  }
 
   doc
     .fontSize(16)
@@ -56,14 +68,22 @@ export const generateReceiptPDF = async (paymentId, res) => {
   doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
   doc.moveDown(2);
 
+  /* =========================
+     RECEIPT TITLE
+  ========================= */
+
   doc.fontSize(14).text("Fee Receipt", { align: "center" });
   doc.moveDown(2);
+
+  /* =========================
+     RECEIPT DETAILS
+  ========================= */
 
   doc.fontSize(10);
   doc.text(`Receipt No: ${payment.receiptNumber}`);
   doc.text(`Date: ${new Date(payment.createdAt).toLocaleDateString()}`);
   doc.text(`Payment Mode: ${payment.mode}`);
-  doc.text(`Amount Paid: Rs.${payment.amount}`);
+  doc.text(`Amount Paid: ₹${payment.amount}`);
 
   if (payment.monthsCovered?.length > 0) {
     doc.text(`Months Covered: ${payment.monthsCovered.join(", ")}`);
@@ -73,12 +93,20 @@ export const generateReceiptPDF = async (paymentId, res) => {
   doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
   doc.moveDown(2);
 
+  /* =========================
+     STUDENT DETAILS
+  ========================= */
+
   doc.text(`Student Name: ${student.name}`);
   doc.text(`Admission No: ${student.admissionNo}`);
   doc.text(
     `Class: ${academic.class}${academic.section ? `-${academic.section}` : ""}`
   );
   doc.text(`Academic Year: ${academic.academicYear}`);
+
+  /* =========================
+     CASH WATERMARK
+  ========================= */
 
   if (payment.mode === "CASH") {
     doc
@@ -93,13 +121,19 @@ export const generateReceiptPDF = async (paymentId, res) => {
       .restore();
   }
 
+  /* =========================
+     FOOTER
+  ========================= */
+
   doc.moveDown(4);
   doc.fontSize(9).fillColor("gray");
   doc.text(
     "This is a system-generated receipt and does not require a signature."
   );
+
   doc.moveDown(2);
   doc.text("Authorized Signatory", { align: "right" });
 
+  // 3️⃣ Finalize
   doc.end();
 };
