@@ -8,13 +8,15 @@ datasource db {
 }
 
 enum PaymentMode {
-  ONLINE
+  UPI
   CASH
 }
 
 enum PaymentStatus {
-  PENDING
+  AWAITING_PAYMENT
+  PAYMENT_SUBMITTED
   CONFIRMED
+  REJECTED
   REVERSED
 }
 
@@ -28,41 +30,41 @@ enum FeeFrequency {
   TERM
 }
 
-
 model Student {
-  admissionNo   String   @id
-  name          String
-  dob           DateTime
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-
-  academics     StudentAcademic[]
-  feeAccounts   StudentFeeAccount[]
-  discounts     Discount[]
-  payments      Payment[]
+  admissionNo String              @id
+  name        String
+  dob         DateTime
+  active      Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  fatherName  String?
+  motherName  String?
+  academics   StudentAcademic[]
+  feeAccounts StudentFeeAccount[]
+  discounts   Discount[]
+  payments    Payment[]
 }
 
 model StudentAcademic {
-  id             String   @id @default(uuid())
+  id             String  @id @default(uuid())
   admissionNo    String
   academicYear   String
   class          String
   section        String?
   feeStartMonth  Int
   transportOpted Boolean
-  transportFee   Int?     // ✅ student-wise, annual
+  transportFee   Int? // ✅ student-wise, annual
 
-  student        Student @relation(fields: [admissionNo], references: [admissionNo])
+  student Student @relation(fields: [admissionNo], references: [admissionNo])
 
   @@unique([admissionNo, academicYear])
 }
 
 model FeeStructure {
-  id            String        @id @default(uuid())
-  academicYear  String
-  class         String
-  tuitionFee    Int           // ✅ tuition only
-  frequency     FeeFrequency
+  id           String       @id @default(uuid())
+  academicYear String
+  class        String
+  tuitionFee   Int // ✅ tuition only
+  frequency    FeeFrequency
 
   @@unique([academicYear, class])
 }
@@ -76,38 +78,38 @@ model StudentFeeAccount {
   balance      Int
   status       FeeAccountStatus @default(OPEN)
 
-  student      Student @relation(fields: [admissionNo], references: [admissionNo])
+  student Student @relation(fields: [admissionNo], references: [admissionNo])
 
   @@unique([admissionNo, academicYear])
 }
 
 model Discount {
-  id            String   @id @default(uuid())
-  admissionNo   String
-  academicYear  String
-  amount        Int
-  active        Boolean  @default(true)
-  appliedBy     String
-  appliedAt     DateTime @default(now())
+  id           String   @id @default(uuid())
+  admissionNo  String
+  academicYear String
+  amount       Int
+  active       Boolean  @default(true)
+  appliedBy    String
+  appliedAt    DateTime @default(now())
 
-  student       Student @relation(fields: [admissionNo], references: [admissionNo])
+  student Student @relation(fields: [admissionNo], references: [admissionNo])
 }
 
 model Payment {
-  id                 String        @id @default(uuid())
-  admissionNo        String
-  academicYear       String
-  amount             Int
-  mode               PaymentMode
-  status             PaymentStatus
-  razorpayOrderId    String?
-  razorpayPaymentId  String?
-  receiptNumber      String?
-  monthsCovered      Json
-  collectedBy        String?
-  createdAt          DateTime      @default(now())
+  id            String        @id @default(uuid())
+  admissionNo   String
+  academicYear  String
+  amount        Int
+  mode          PaymentMode
+  status        PaymentStatus
+  receiptNumber String?
+  monthsCovered Json
+  collectedBy   String?
+  utrNumber     String?
+  screenshotUrl String? // ✅ NEW
+  createdAt     DateTime      @default(now())
 
-  student             Student @relation(fields: [admissionNo], references: [admissionNo])
+  student Student @relation(fields: [admissionNo], references: [admissionNo])
 }
 
 model Admin {

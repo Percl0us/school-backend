@@ -2,16 +2,32 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { prisma } from "./lib/prisma.js";
-
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "http://localhost:5000",
+          "https://res.cloudinary.com",
+        ],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
+    },
+  }),
+);
 import adminRoutes from "./routes/admin.routes.js";
 import studentRoutes from "./routes/student.routes.js";
-import paymeneRoutes from './routes/payment.route.js'
+import paymeneRoutes from "./routes/payment.route.js";
+import helmet from "helmet";
 app.get("/health", async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -21,6 +37,7 @@ app.get("/health", async (req, res) => {
   }
 });
 app.use("/payments", paymeneRoutes);
+app.get("/favicon.ico", (_, res) => res.status(204).end());
 
 // after app.use(express.json())
 app.use("/admin", adminRoutes);

@@ -11,6 +11,7 @@ export const getReceipt = async (req, res) => {
 
     const { paymentId } = req.params;
     const { admissionNo, dob } = req.query;
+    console.log("Receipt hit for:", paymentId);
 
     // 1️⃣ Fetch payment
     const payment = await prisma.payment.findUnique({

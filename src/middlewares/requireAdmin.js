@@ -1,19 +1,31 @@
 import jwt from "jsonwebtoken";
+import { prisma } from "../lib/prisma.js";
 
-export const requireAdmin = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
+export const requireAdmin = async (req, res, next) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.adminId = decoded.adminId;
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader)
+      return res.status(401).json({ error: "Unauthorized" });
+
+    const token = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
+    const admin = await prisma.admin.findUnique({
+      where: { id: decoded.adminId },
+    });
+
+    if (!admin || !admin.active) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    req.admin = admin;   // 👈 attach full admin
     next();
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
+  } catch (err) {
+    res.status(401).json({ error: "Unauthorized" });
   }
 };

@@ -1,13 +1,21 @@
 import { prisma } from "../lib/prisma.js";
-import { razorpay } from "./razorpay.service.js";
-import crypto from "crypto";
 
 /* =========================
    Academic Month Order
 ========================= */
 const MONTH_ORDER = [
-  "APR", "MAY", "JUN", "JUL", "AUG", "SEP",
-  "OCT", "NOV", "DEC", "JAN", "FEB", "MAR",
+  "APR",
+  "MAY",
+  "JUN",
+  "JUL",
+  "AUG",
+  "SEP",
+  "OCT",
+  "NOV",
+  "DEC",
+  "JAN",
+  "FEB",
+  "MAR",
 ];
 
 const MONTH_TO_NUMBER = {
@@ -27,82 +35,65 @@ const MONTH_TO_NUMBER = {
 
 /* =========================
    Applicable Months Calculator
-   (Apr → Mar academic year)
 ========================= */
 const calculateApplicableMonths = (feeStartMonth) => {
-  // Apr–Dec + Jan–Mar
+  // Logic: Total months from start month to March of next year
   if (feeStartMonth >= 4) {
     return 12 - feeStartMonth + 1 + 3;
   }
-
-  // Jan–Mar
   return 3 - feeStartMonth + 1;
 };
 
 /* =========================
-   CREATE ONLINE ORDER
+   CORE PAYMENT CALCULATOR
 ========================= */
-export const createOrderService = async (data) => {
-  const { admissionNo, academicYear, paymentType, months } = data;
-
-  if (!admissionNo || !academicYear || !paymentType) {
-    throw new Error("Missing required fields");
-  }
-
-  // 1️⃣ Fetch fee account
-  const feeAccount = await prisma.studentFeeAccount.findUnique({
-    where: {
-      admissionNo_academicYear: { admissionNo, academicYear },
-    },
+/**
+ * @param {object} tx - Prisma Client or Transaction Client
+ */
+const calculatePaymentDetails = async (
+  tx,
+  { admissionNo, academicYear, paymentType, months, skipPendingCheck = false },
+) => {
+  const feeAccount = await tx.studentFeeAccount.findUnique({
+    where: { admissionNo_academicYear: { admissionNo, academicYear } },
   });
 
-  if (!feeAccount) {
-    throw new Error("Fee account not found");
-  }
+  if (!feeAccount) throw new Error("Fee account not found");
+  if (feeAccount.balance <= 0) throw new Error("No outstanding balance");
 
-  if (feeAccount.balance <= 0) {
-    throw new Error("No outstanding balance");
+  const academic = await tx.studentAcademic.findUnique({
+    where: { admissionNo_academicYear: { admissionNo, academicYear } },
+  });
+
+  if (!academic) throw new Error("Academic record not found");
+
+  // Prevent multiple pending submissions to avoid double-charging
+  if (!skipPendingCheck) {
+    const existingPending = await tx.payment.findFirst({
+      where: {
+        admissionNo,
+        academicYear,
+        status: { in: ["AWAITING_PAYMENT", "PAYMENT_SUBMITTED"] },
+      },
+    });
+    if (existingPending) throw new Error("A payment is already under review.");
   }
 
   let amountToPay = 0;
   let monthsCovered = [];
 
-  /* =========================
-     FULL PAYMENT
-  ========================= */
   if (paymentType === "FULL") {
     amountToPay = feeAccount.balance;
-  }
-
-  /* =========================
-     MONTHS PAYMENT
-  ========================= */
-  if (paymentType === "MONTHS") {
+    monthsCovered = []; // Usually left empty for full clear, or filled with remaining
+  } else if (paymentType === "MONTHS") {
     if (!Array.isArray(months) || months.length === 0) {
       throw new Error("Months required for MONTHS payment");
     }
 
-    // Fetch academic record
-    const academic = await prisma.studentAcademic.findUnique({
-      where: {
-        admissionNo_academicYear: { admissionNo, academicYear },
-      },
+    const confirmedPayments = await tx.payment.findMany({
+      where: { admissionNo, academicYear, status: "CONFIRMED" },
     });
 
-    if (!academic) {
-      throw new Error("Academic record not found");
-    }
-
-    // Fetch confirmed payments
-    const confirmedPayments = await prisma.payment.findMany({
-      where: {
-        admissionNo,
-        academicYear,
-        status: "CONFIRMED",
-      },
-    });
-
-    // Build paid months set
     const paidMonthsSet = new Set();
     confirmedPayments.forEach((p) => {
       if (Array.isArray(p.monthsCovered)) {
@@ -110,138 +101,153 @@ export const createOrderService = async (data) => {
       }
     });
 
-    // Find academic start index
     const startIndex = MONTH_ORDER.findIndex(
-      (m) => MONTH_TO_NUMBER[m] === academic.feeStartMonth
+      (m) => MONTH_TO_NUMBER[m] === academic.feeStartMonth,
     );
-
-    if (startIndex === -1) {
+    if (startIndex === -1)
       throw new Error("Invalid fee start month configuration");
-    }
 
-    const unpaidMonthsInOrder = MONTH_ORDER
-      .slice(startIndex)
-      .filter((m) => !paidMonthsSet.has(m));
-
+    // Filter order to get only unpaid months
+    const unpaidMonthsInOrder = MONTH_ORDER.slice(startIndex).filter(
+      (m) => !paidMonthsSet.has(m),
+    );
     const firstUnpaidMonth = unpaidMonthsInOrder[0];
 
-    // Must include oldest unpaid month
+    // Validation: Prevent skipping months
     if (!months.includes(firstUnpaidMonth)) {
       throw new Error(
-        `Please clear earlier dues first. Pending from ${firstUnpaidMonth}.`
+        `Please clear earlier dues first. Pending from ${firstUnpaidMonth}.`,
       );
     }
 
-    // Must be consecutive unpaid months
+    // Validation: Ensure selection is consecutive
     for (let i = 0; i < months.length; i++) {
       if (months[i] !== unpaidMonthsInOrder[i]) {
         throw new Error("Selected months must be consecutive unpaid months");
       }
     }
 
-    /* =========================
-       ✅ CORRECT MONTHLY AMOUNT
-       based on applicable months
-    ========================= */
-    const applicableMonths = calculateApplicableMonths(
-      academic.feeStartMonth
+    const applicableMonthsCount = calculateApplicableMonths(
+      academic.feeStartMonth,
     );
 
-    const monthlyAmount = Math.round(
-      feeAccount.totalFee / applicableMonths
+    /**
+     * FIX: Penny Drift
+     * We calculate the total value of selected months first, then round,
+     * to ensure the sum of individual payments equals the total fee.
+     */
+    amountToPay = Math.round(
+      (feeAccount.totalFee / applicableMonthsCount) * months.length,
     );
 
-    amountToPay = months.length * monthlyAmount;
-
-    // Final safety guard
+    // Ensure we don't accidentally ask for more than the current balance due to rounding
     amountToPay = Math.min(amountToPay, feeAccount.balance);
-
     monthsCovered = months;
   }
 
-  amountToPay = Math.round(amountToPay);
+  if (amountToPay <= 0) throw new Error("Invalid payment amount");
 
-  if (amountToPay > feeAccount.balance) {
-    throw new Error("Payment exceeds outstanding balance");
+  return { amountToPay: Math.round(amountToPay), monthsCovered };
+};
+
+/* =========================
+   CREATE QR (UPI) QUOTE
+========================= */
+export const quotePaymentService = async (data) => {
+  let { months, admissionNo, academicYear, paymentType } = data;
+
+  if (typeof months === "string") {
+    try {
+      months = JSON.parse(months);
+    } catch {
+      months = [];
+    }
   }
 
-  /* =========================
-     CREATE RAZORPAY ORDER
-  ========================= */
-  const order = await razorpay.orders.create({
-    amount: amountToPay * 100,
-    currency: "INR",
-    receipt: `fee_${admissionNo}_${Date.now()}`,
-  });
+  if (!admissionNo || !academicYear || !paymentType) {
+    throw new Error("Missing required fields");
+  }
 
-  /* =========================
-     CREATE PENDING PAYMENT
-  ========================= */
-  await prisma.payment.create({
-    data: {
-      admissionNo,
-      academicYear,
-      amount: amountToPay,
-      mode: "ONLINE",
-      status: "PENDING",
-      razorpayOrderId: order.id,
-      monthsCovered,
-    },
+  // Uses standard prisma client for read-only quote
+  const { amountToPay, monthsCovered } = await calculatePaymentDetails(prisma, {
+    admissionNo,
+    academicYear,
+    paymentType,
+    months,
   });
 
   return {
-    razorpayOrderId: order.id,
     amount: amountToPay,
-    currency: "INR",
-    key: process.env.RAZORPAY_KEY_ID,
+    monthsCovered,
+    upiId: process.env.SCHOOL_UPI_ID,
   };
 };
 
 /* =========================
-   VERIFY ONLINE PAYMENT
+   SUBMIT UPI PROOF
 ========================= */
-export const verifyPaymentService = async ({
-  razorpayOrderId,
-  razorpayPaymentId,
-  razorpaySignature,
-}) => {
-  if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
-    throw new Error("Missing payment verification fields");
+export const submitPaymentProofService = async (data, screenshotUrl) => {
+  let { admissionNo, academicYear, paymentType, months, utrNumber } = data;
+
+  if (typeof months === "string") {
+    try {
+      months = JSON.parse(months);
+    } catch {
+      months = [];
+    }
   }
 
-  const body = razorpayOrderId + "|" + razorpayPaymentId;
+  if (!utrNumber) throw new Error("UTR number required");
 
-  const expectedSignature = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-    .update(body)
-    .digest("hex");
+  // Check for duplicate UTR to prevent double submission
+  const duplicateUTR = await prisma.payment.findFirst({ where: { utrNumber } });
+  if (duplicateUTR)
+    throw new Error("This UTR number has already been submitted.");
 
-  if (expectedSignature !== razorpaySignature) {
-    throw new Error("Invalid payment signature");
-  }
-
-  const payment = await prisma.payment.findFirst({
-    where: {
-      razorpayOrderId,
-      status: "PENDING",
-    },
+  const { amountToPay, monthsCovered } = await calculatePaymentDetails(prisma, {
+    admissionNo,
+    academicYear,
+    paymentType,
+    months,
   });
 
-  if (!payment) {
+  return prisma.payment.create({
+    data: {
+      admissionNo,
+      academicYear,
+      amount: amountToPay,
+      mode: "UPI",
+      status: "PAYMENT_SUBMITTED",
+      monthsCovered,
+      utrNumber,
+      screenshotUrl,
+    },
+  });
+};
+
+/* =========================
+   ADMIN CONFIRM UPI PAYMENT
+========================= */
+export const confirmUPIPaymentService = async (paymentId, adminId) => {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+  });
+
+  if (!payment || payment.status !== "PAYMENT_SUBMITTED") {
     throw new Error("Payment not found or already processed");
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const confirmedPayment = await tx.payment.update({
-      where: { id: payment.id },
+  return prisma.$transaction(async (tx) => {
+    const updatedPayment = await tx.payment.update({
+      where: { id: paymentId },
       data: {
         status: "CONFIRMED",
-        razorpayPaymentId,
-        receiptNumber: `RCPT-${Date.now()}`,
+        receiptNumber: `TPS/${payment.academicYear}/${Date.now()}`,
+        collectedBy: adminId,
       },
     });
 
-    const updatedAccount = await tx.studentFeeAccount.update({
+    await tx.studentFeeAccount.update({
       where: {
         admissionNo_academicYear: {
           admissionNo: payment.admissionNo,
@@ -254,61 +260,38 @@ export const verifyPaymentService = async ({
       },
     });
 
-    return { confirmedPayment, updatedAccount };
+    return updatedPayment;
   });
-
-  return {
-    message: "Payment verified successfully",
-    receiptNumber: result.confirmedPayment.receiptNumber,
-    paymentId: result.confirmedPayment.id, 
-    feeAccount: {
-      totalPaid: result.updatedAccount.totalPaid,
-      balance: result.updatedAccount.balance,
-    },
-  };
 };
 
 /* =========================
-   CREATE CASH PAYMENT
+   CREATE CASH PAYMENT (ADMIN)
 ========================= */
 export const createCashPaymentService = async (data, adminId) => {
-  const { admissionNo, academicYear, amount, monthsCovered } = data;
+  const { admissionNo, academicYear, paymentType, months } = data;
 
-  if (!admissionNo || !academicYear || amount === undefined) {
+  if (!admissionNo || !academicYear || !paymentType) {
     throw new Error("Missing required fields");
   }
 
-  if (amount <= 0) {
-    throw new Error("Invalid payment amount");
-  }
+  return prisma.$transaction(async (tx) => {
+    // Calculation inside transaction to ensure balance hasn't changed
+    const { amountToPay, monthsCovered } = await calculatePaymentDetails(tx, {
+      admissionNo,
+      academicYear,
+      paymentType,
+      months,
+      skipPendingCheck: true,
+    });
 
-  const feeAccount = await prisma.studentFeeAccount.findUnique({
-    where: {
-      admissionNo_academicYear: { admissionNo, academicYear },
-    },
-  });
-
-  if (!feeAccount) {
-    throw new Error("Fee account not found");
-  }
-
-  if (feeAccount.balance <= 0) {
-    throw new Error("No outstanding balance");
-  }
-
-  if (amount > feeAccount.balance) {
-    throw new Error("Payment exceeds outstanding balance");
-  }
-
-  const result = await prisma.$transaction(async (tx) => {
     const payment = await tx.payment.create({
       data: {
         admissionNo,
         academicYear,
-        amount,
+        amount: amountToPay,
         mode: "CASH",
         status: "CONFIRMED",
-        monthsCovered: monthsCovered ?? [],
+        monthsCovered,
         collectedBy: adminId,
       },
     });
@@ -320,26 +303,37 @@ export const createCashPaymentService = async (data, adminId) => {
       data: { receiptNumber },
     });
 
-    const updatedAccount = await tx.studentFeeAccount.update({
+    await tx.studentFeeAccount.update({
       where: {
         admissionNo_academicYear: { admissionNo, academicYear },
       },
       data: {
-        totalPaid: { increment: amount },
-        balance: { decrement: amount },
+        totalPaid: { increment: amountToPay },
+        balance: { decrement: amountToPay },
       },
     });
 
-    return { payment: updatedPayment, updatedAccount };
+    return updatedPayment;
+  });
+};
+
+/* =========================
+   REJECT UPI PAYMENT
+========================= */
+export const rejectUPIPaymentService = async (paymentId, adminId) => {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
   });
 
-  return {
-    message: "Cash payment recorded successfully",
-    paymentId: result.payment.id,
-    receiptNumber: result.payment.receiptNumber,
-    feeAccount: {
-      totalPaid: result.updatedAccount.totalPaid,
-      balance: result.updatedAccount.balance,
+  if (!payment || payment.status !== "PAYMENT_SUBMITTED") {
+    throw new Error("Invalid payment state for rejection");
+  }
+
+  return prisma.payment.update({
+    where: { id: paymentId },
+    data: {
+      status: "REJECTED",
+      collectedBy: adminId,
     },
-  };
+  });
 };

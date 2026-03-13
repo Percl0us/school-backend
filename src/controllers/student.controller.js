@@ -72,7 +72,7 @@ export const studentLogin = async (req, res) => {
         admissionNo,
         academicYear,
         status: {
-          in: ["CONFIRMED", "PENDING"],
+          in: ["CONFIRMED", "PAYMENT_SUBMITTED"],
         },
       },
       orderBy: { createdAt: "desc" },

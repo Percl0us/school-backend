@@ -6,6 +6,8 @@ export const createStudentService = async (data) => {
     name,
     dob,
     academicYear,
+    fatherName,
+    motherName,
     class: studentClass,
     section,
     feeStartMonth,
@@ -55,7 +57,6 @@ export const createStudentService = async (data) => {
   if (!feeStructure) {
     throw new Error("Fee structure not defined for this class and year");
   }
-
   // 5️⃣ Academic-session-aware month calculation (Apr–Mar)
   const calculateAcademicMonths = (startMonth) => {
     const SESSION_START = 4; // April
@@ -80,13 +81,14 @@ export const createStudentService = async (data) => {
   const monthlyTotal = monthlyTuition + monthlyTransport;
 
   const totalFee = monthsApplicable * monthlyTotal;
-
   // 7️⃣ Transaction: create student + academic + fee account
   const student = await prisma.$transaction(async (tx) => {
     const createdStudent = await tx.student.create({
       data: {
         admissionNo,
         name,
+        fatherName,
+        motherName,
         dob: new Date(dob),
       },
     });
