@@ -18,7 +18,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://school-backend-43p9.onrender.com",
+      "https://school-website-six-roan.vercel.app/",
     ],
     credentials: true,
   })
