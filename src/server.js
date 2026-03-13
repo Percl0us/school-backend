@@ -1,33 +1,39 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import helmet from "helmet";
 import { prisma } from "./lib/prisma.js";
+
+import adminRoutes from "./routes/admin.routes.js";
+import studentRoutes from "./routes/student.routes.js";
+import paymentRoutes from "./routes/payment.route.js";
+
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+/* Middlewares */
+
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://school-backend-43p9.onrender.com",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
+
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        imgSrc: [
-          "'self'",
-          "data:",
-          "http://localhost:5000",
-          "https://res.cloudinary.com",
-        ],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-      },
-    },
-  }),
+    contentSecurityPolicy: false
+  })
 );
-import adminRoutes from "./routes/admin.routes.js";
-import studentRoutes from "./routes/student.routes.js";
-import paymeneRoutes from "./routes/payment.route.js";
-import helmet from "helmet";
+
+/* Health check */
+
 app.get("/health", async (req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -36,14 +42,18 @@ app.get("/health", async (req, res) => {
     res.status(500).json({ status: "error", db: "not connected" });
   }
 });
-app.use("/payments", paymeneRoutes);
+
+/* Routes */
+
+app.use("/admin", adminRoutes);
+app.use("/student", studentRoutes);
+app.use("/payments", paymentRoutes);
+
+/* Ignore favicon */
+
 app.get("/favicon.ico", (_, res) => res.status(204).end());
 
-// after app.use(express.json())
-app.use("/admin", adminRoutes);
-
-// after app.use(express.json())
-app.use("/student", studentRoutes);
+/* Server */
 
 const PORT = process.env.PORT || 5000;
 
