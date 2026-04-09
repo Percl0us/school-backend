@@ -7,6 +7,7 @@ import { prisma } from "./lib/prisma.js";
 import adminRoutes from "./routes/admin.routes.js";
 import studentRoutes from "./routes/student.routes.js";
 import paymentRoutes from "./routes/payment.route.js";
+import homeroutes from "./routes/home.routes.js";
 
 dotenv.config();
 
@@ -42,6 +43,7 @@ app.get("/health", async (req, res) => {
 app.use("/admin", adminRoutes);
 app.use("/student", studentRoutes);
 app.use("/payments", paymentRoutes);
+app.use("/home",homeroutes);
 
 /* Ignore favicon */
 

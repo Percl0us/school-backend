@@ -7,9 +7,110 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Notice {
+  id        String     @id @default(uuid())
+  title     String
+  date      DateTime
+  type      NoticeType
+  createdAt DateTime   @default(now())
+  isActive  Boolean    @default(true)
+}
+
+model Student {
+  admissionNo String              @id
+  name        String
+  dob         DateTime
+  active      Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  fatherName  String?
+  motherName  String?
+  discounts   Discount[]
+  payments    Payment[]
+  academics   StudentAcademic[]
+  feeAccounts StudentFeeAccount[]
+}
+
+model StudentAcademic {
+  id             String  @id @default(uuid())
+  admissionNo    String
+  academicYear   String
+  class          String
+  section        String?
+  feeStartMonth  Int
+  transportOpted Boolean
+  transportFee   Int?
+  student        Student @relation(fields: [admissionNo], references: [admissionNo])
+
+  @@unique([admissionNo, academicYear])
+}
+
+model FeeStructure {
+  id           String       @id @default(uuid())
+  academicYear String
+  class        String
+  tuitionFee   Int
+  frequency    FeeFrequency
+
+  @@unique([academicYear, class])
+}
+
+model StudentFeeAccount {
+  id           String           @id @default(uuid())
+  admissionNo  String
+  academicYear String
+  totalFee     Int
+  totalPaid    Int              @default(0)
+  balance      Int
+  status       FeeAccountStatus @default(OPEN)
+  student      Student          @relation(fields: [admissionNo], references: [admissionNo])
+
+  @@unique([admissionNo, academicYear])
+}
+
+model Discount {
+  id           String   @id @default(uuid())
+  admissionNo  String
+  academicYear String
+  amount       Int
+  active       Boolean  @default(true)
+  appliedBy    String
+  appliedAt    DateTime @default(now())
+  student      Student  @relation(fields: [admissionNo], references: [admissionNo])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  admissionNo   String
+  academicYear  String
+  amount        Int
+  mode          PaymentMode
+  status        PaymentStatus
+  receiptNumber String?
+  monthsCovered Json
+  collectedBy   String?
+  createdAt     DateTime      @default(now())
+  screenshotUrl String?
+  utrNumber     String?
+  student       Student       @relation(fields: [admissionNo], references: [admissionNo])
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
 enum PaymentMode {
   UPI
   CASH
+}
+
+enum NoticeType {
+  NOTICE
+  EVENT
 }
 
 enum PaymentStatus {
@@ -28,95 +129,4 @@ enum FeeAccountStatus {
 enum FeeFrequency {
   MONTHLY
   TERM
-}
-
-model Student {
-  admissionNo String              @id
-  name        String
-  dob         DateTime
-  active      Boolean             @default(true)
-  createdAt   DateTime            @default(now())
-  fatherName  String?
-  motherName  String?
-  academics   StudentAcademic[]
-  feeAccounts StudentFeeAccount[]
-  discounts   Discount[]
-  payments    Payment[]
-}
-
-model StudentAcademic {
-  id             String  @id @default(uuid())
-  admissionNo    String
-  academicYear   String
-  class          String
-  section        String?
-  feeStartMonth  Int
-  transportOpted Boolean
-  transportFee   Int? // ✅ student-wise, annual
-
-  student Student @relation(fields: [admissionNo], references: [admissionNo])
-
-  @@unique([admissionNo, academicYear])
-}
-
-model FeeStructure {
-  id           String       @id @default(uuid())
-  academicYear String
-  class        String
-  tuitionFee   Int // ✅ tuition only
-  frequency    FeeFrequency
-
-  @@unique([academicYear, class])
-}
-
-model StudentFeeAccount {
-  id           String           @id @default(uuid())
-  admissionNo  String
-  academicYear String
-  totalFee     Int
-  totalPaid    Int              @default(0)
-  balance      Int
-  status       FeeAccountStatus @default(OPEN)
-
-  student Student @relation(fields: [admissionNo], references: [admissionNo])
-
-  @@unique([admissionNo, academicYear])
-}
-
-model Discount {
-  id           String   @id @default(uuid())
-  admissionNo  String
-  academicYear String
-  amount       Int
-  active       Boolean  @default(true)
-  appliedBy    String
-  appliedAt    DateTime @default(now())
-
-  student Student @relation(fields: [admissionNo], references: [admissionNo])
-}
-
-model Payment {
-  id            String        @id @default(uuid())
-  admissionNo   String
-  academicYear  String
-  amount        Int
-  mode          PaymentMode
-  status        PaymentStatus
-  receiptNumber String?
-  monthsCovered Json
-  collectedBy   String?
-  utrNumber     String?
-  screenshotUrl String? // ✅ NEW
-  createdAt     DateTime      @default(now())
-
-  student Student @relation(fields: [admissionNo], references: [admissionNo])
-}
-
-model Admin {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  password  String
-  name      String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
 }
