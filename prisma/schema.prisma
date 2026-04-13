@@ -7,6 +7,45 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model DailyChallenge {
+  id          String       @id @default(uuid())
+  title       String
+  question    String
+  imageUrl    String? // 👈 new: optional image for the challenge
+  answerHint  String?
+  allowImage  Boolean      @default(false)
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  submissions Submission[]
+}
+
+model Submission {
+  id            String           @id @default(uuid())
+  challengeId   String
+  studentName   String // For non‑logged‑in users
+  studentId     String? // Optional, if later you add login
+  answerText    String? // Text answer
+  imageUrl      String? // Cloudinary URL
+  status        SubmissionStatus @default(PENDING)
+  pointsAwarded Int              @default(0)
+  rank          Int? // Order of correct approval (1st, 2nd, 3rd...)
+  reviewedBy    String? // admin id
+  reviewedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  challenge     DailyChallenge   @relation(fields: [challengeId], references: [id])
+
+  @@unique([challengeId, studentName]) // One submission per name per challenge
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Optional: Add totalPoints to Student if you later add login
 model Notice {
   id        String     @id @default(uuid())
   title     String
