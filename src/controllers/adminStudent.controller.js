@@ -1,4 +1,11 @@
-import { listStudentsBySessionService } from "../services/adminStudent.service.js";
+import {
+  deleteStudentService,
+  getStudentDetailService,
+  listClassesBySessionService,
+  listStudentsBySessionService,
+  promoteStudentsService,
+  updateStudentService,
+} from "../services/adminStudent.service.js";
 
 export const listStudentsBySession = async (req, res) => {
   try {
@@ -11,7 +18,44 @@ export const listStudentsBySession = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-import { listClassesBySessionService } from "../services/adminStudent.service.js";
+
+export const getStudentDetail = async (req, res) => {
+  try {
+    const { admissionNo } = req.params;
+    const { academicYear } = req.query;
+
+    const result = await getStudentDetailService(admissionNo, academicYear);
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const updateStudent = async (req, res) => {
+  try {
+    const { admissionNo } = req.params;
+    const result = await updateStudentService(admissionNo, {
+      ...req.body,
+      profileImageUrl: req.file?.path,
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+export const deleteStudent = async (req, res) => {
+  try {
+    const { admissionNo } = req.params;
+    const result = await deleteStudentService(admissionNo);
+
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
 
 export const listClassesBySession = async (req, res) => {
   try {
@@ -31,7 +75,6 @@ export const listClassesBySession = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
-import { promoteStudentsService } from "../services/adminStudent.service.js";
 
 export const promoteStudents = async (req, res) => {
   try {

@@ -12,7 +12,11 @@ import { quotePaymentService } from "../services/payment.service.js";
 
 export const quotePayment = async (req, res) => {
   try {
-    const result = await quotePaymentService(req.body);
+    const result = await quotePaymentService({
+      ...req.body,
+      admissionNo: req.user.admissionNo,
+      academicYear: req.user.academicYear,
+    });
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -30,7 +34,14 @@ export const submitPaymentProof = async (req, res) => {
       return res.status(400).json({ error: "Screenshot required" });
     }
 
-    const result = await submitPaymentProofService(req.body, screenshotUrl);
+    const result = await submitPaymentProofService(
+      {
+        ...req.body,
+        admissionNo: req.user.admissionNo,
+        academicYear: req.user.academicYear,
+      },
+      screenshotUrl,
+    );
 
     res.json({
       message: "Payment submitted for verification",

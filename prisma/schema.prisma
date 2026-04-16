@@ -63,10 +63,25 @@ model Student {
   createdAt   DateTime            @default(now())
   fatherName  String?
   motherName  String?
+  profileImageUrl String?
   discounts   Discount[]
   payments    Payment[]
   academics   StudentAcademic[]
   feeAccounts StudentFeeAccount[]
+  results     Result[]
+  // ❌ REMOVE the @@unique constraint from here
+}
+
+model Result {
+  id             String   @id @default(uuid())
+  admissionNo    String
+  academicYear   String
+  subjects       Json     // Array of subject results
+  student        Student  @relation(fields: [admissionNo], references: [admissionNo])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([admissionNo, academicYear])
 }
 
 model StudentAcademic {
@@ -89,7 +104,8 @@ model FeeStructure {
   class        String
   tuitionFee   Int
   frequency    FeeFrequency
-
+  subjects     Json?        // 👈 NEW: array of subject names e.g. ["Math","Science"]
+  
   @@unique([academicYear, class])
 }
 
@@ -168,4 +184,14 @@ enum FeeAccountStatus {
 enum FeeFrequency {
   MONTHLY
   TERM
+}
+
+model AcademicSession {
+  id            String       @id @default(uuid())
+  academicYear  String       @unique
+  startDate     DateTime
+  endDate       DateTime
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 }

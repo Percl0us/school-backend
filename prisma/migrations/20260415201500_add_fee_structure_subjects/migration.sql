@@ -1,0 +1,2 @@
+ALTER TABLE "FeeStructure"
+ADD COLUMN IF NOT EXISTS "subjects" JSONB;

@@ -2,6 +2,11 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
 
 export const requireAdmin = async (req, res, next) => {
+  // Allow OPTIONS requests (CORS preflight)
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+
   try {
     const authHeader = req.headers.authorization;
 

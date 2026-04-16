@@ -1,8 +1,10 @@
 import { createStudentService } from "../services/student.service.js";
-
 export const createStudent = async (req, res) => {
   try {
-    const student = await createStudentService(req.body);
+    const student = await createStudentService({
+      ...req.body,
+      profileImageUrl: req.file?.path,
+    });
     res.status(201).json(student);
   } catch (err) {
     console.error(err);

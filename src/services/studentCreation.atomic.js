@@ -8,6 +8,7 @@ export const createStudentAtomic = async (tx, data) => {
     academicYear,
     fatherName,
     motherName,
+    profileImageUrl,
     class: studentClass,
     section,
     feeStartMonth,
@@ -19,15 +20,26 @@ export const createStudentAtomic = async (tx, data) => {
     throw new Error("Missing required fields");
   }
 
-  if (feeStartMonth < 1 || feeStartMonth > 12) {
+  const normalizedFeeStartMonth = Number(feeStartMonth);
+  const normalizedTransportOpted =
+    transportOpted === true || transportOpted === "true";
+  const normalizedTransportFee =
+    transportFee === undefined || transportFee === null || transportFee === ""
+      ? null
+      : Number(transportFee);
+
+  if (normalizedFeeStartMonth < 1 || normalizedFeeStartMonth > 12) {
     throw new Error("Invalid fee start month");
   }
 
-  if (transportOpted && (transportFee === undefined || transportFee === null)) {
+  if (
+    normalizedTransportOpted &&
+    (normalizedTransportFee === undefined || normalizedTransportFee === null)
+  ) {
     throw new Error("Transport fee required if transport is opted");
   }
 
-  if (!transportOpted && transportFee) {
+  if (!normalizedTransportOpted && normalizedTransportFee) {
     throw new Error("Transport fee should not be provided if transport is not opted");
   }
 
@@ -63,11 +75,11 @@ export const createStudentAtomic = async (tx, data) => {
     return SESSION_END - startMonth + 1;
   };
 
-  const monthsApplicable = calculateAcademicMonths(feeStartMonth);
+  const monthsApplicable = calculateAcademicMonths(normalizedFeeStartMonth);
 
   const monthlyTuition = Math.round(feeStructure.tuitionFee / 12);
-  const monthlyTransport = transportOpted
-    ? Math.round(transportFee / 12)
+  const monthlyTransport = normalizedTransportOpted
+    ? Math.round(normalizedTransportFee / 12)
     : 0;
 
   const monthlyTotal = monthlyTuition + monthlyTransport;
@@ -80,6 +92,7 @@ export const createStudentAtomic = async (tx, data) => {
       fatherName,
       motherName,
       dob: new Date(dob),
+      profileImageUrl: profileImageUrl || null,
     },
   });
 
@@ -89,9 +102,9 @@ export const createStudentAtomic = async (tx, data) => {
       academicYear,
       class: studentClass,
       section,
-      feeStartMonth,
-      transportOpted,
-      transportFee: transportOpted ? transportFee : null,
+      feeStartMonth: normalizedFeeStartMonth,
+      transportOpted: normalizedTransportOpted,
+      transportFee: normalizedTransportOpted ? normalizedTransportFee : null,
     },
   });
 

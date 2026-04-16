@@ -5,10 +5,16 @@ import {
 } from "../controllers/payment.controller.js";
 import upload from "../middlewares/upload.middleware.js";
 import { getReceipt } from "../controllers/receipt.controller.js";
+import { requireStudent } from "../middlewares/requireStudent.js";
 
 const router = express.Router();
 
-router.post("/quote", quotePayment);
-router.post("/submit-proof", upload.single("screenshot"), submitPaymentProof);
 router.get("/:paymentId/receipt", getReceipt);
+router.post("/quote", requireStudent, quotePayment);
+router.post(
+  "/submit-proof",
+  requireStudent,
+  upload.single("screenshot"),
+  submitPaymentProof,
+);
 export default router;

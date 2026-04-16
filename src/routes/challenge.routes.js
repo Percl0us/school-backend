@@ -4,6 +4,31 @@ import { upload } from "../middlewares/upload.middleware.js"; // ensure this exp
 
 const router = express.Router();
 
+const parseChallengePayload = (body) => {
+  const title = String(body.title || "").trim();
+  const question = String(body.question || "").trim();
+  const answerHint = String(body.answerHint || "").trim();
+  const startDate = new Date(body.startDate);
+  const endDate = new Date(body.endDate);
+
+  if (!title || !question || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    throw new Error("Title, question, start date, and end date are required");
+  }
+
+  if (endDate <= startDate) {
+    throw new Error("End date must be after start date");
+  }
+
+  return {
+    title,
+    question,
+    answerHint: answerHint || null,
+    allowImage: body.allowImage === "true" || body.allowImage === true,
+    startDate,
+    endDate,
+  };
+};
+
 // ========== Student Facing ==========
 
 // Get today's active challenge
@@ -133,21 +158,11 @@ router.post(
   upload.single("challengeImage"),
   async (req, res) => {
     try {
-      const { title, question, answerHint, allowImage, startDate, endDate } =
-        req.body;
-      let imageUrl = null;
-      if (req.file) {
-        imageUrl = req.file.path; // Cloudinary URL
-      }
+      const payload = parseChallengePayload(req.body);
       const challenge = await prisma.dailyChallenge.create({
         data: {
-          title,
-          question,
-          imageUrl,
-          answerHint,
-          allowImage: allowImage === "true" || allowImage === true,
-          startDate: new Date(startDate),
-          endDate: new Date(endDate),
+          ...payload,
+          imageUrl: req.file?.path || null,
         },
       });
       res.json(challenge);
@@ -156,6 +171,70 @@ router.post(
     }
   },
 );
+
+router.put(
+  "/admin/challenges/:challengeId",
+  upload.single("challengeImage"),
+  async (req, res) => {
+    try {
+      const existingChallenge = await prisma.dailyChallenge.findUnique({
+        where: { id: req.params.challengeId },
+      });
+
+      if (!existingChallenge) {
+        return res.status(404).json({ error: "Challenge not found" });
+      }
+
+      const payload = parseChallengePayload(req.body);
+      const removeImage =
+        req.body.removeImage === "true" || req.body.removeImage === true;
+
+      const challenge = await prisma.dailyChallenge.update({
+        where: { id: req.params.challengeId },
+        data: {
+          ...payload,
+          imageUrl: removeImage
+            ? null
+            : req.file?.path || existingChallenge.imageUrl,
+        },
+      });
+
+      res.json(challenge);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
+
+router.delete("/admin/challenges/:challengeId", async (req, res) => {
+  try {
+    const existingChallenge = await prisma.dailyChallenge.findUnique({
+      where: { id: req.params.challengeId },
+      select: { id: true, title: true },
+    });
+
+    if (!existingChallenge) {
+      return res.status(404).json({ error: "Challenge not found" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.submission.deleteMany({
+        where: { challengeId: req.params.challengeId },
+      });
+
+      await tx.dailyChallenge.delete({
+        where: { id: req.params.challengeId },
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Challenge "${existingChallenge.title}" deleted successfully`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Get all challenges (admin)
 router.get("/admin/challenges", async (req, res) => {

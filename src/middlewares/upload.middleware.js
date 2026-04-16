@@ -21,9 +21,20 @@ const challengeStorage = new CloudinaryStorage({
   },
 });
 
+// Storage for student profile photos
+const studentProfileStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "student-profiles",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [{ width: 600, height: 600, crop: "limit" }],
+  },
+});
+
 // Export both middlewares
 export const uploadPayment = multer({ storage: paymentsStorage });
 export const upload = multer({ storage: challengeStorage });
+export const uploadStudentProfile = multer({ storage: studentProfileStorage });
 
 // Keep default export for backward compatibility (payments)
 export default multer({ storage: paymentsStorage });

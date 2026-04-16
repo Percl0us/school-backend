@@ -4,16 +4,13 @@ import jwt from "jsonwebtoken";
 
 export const getReceipt = async (req, res) => {
   try {
-    // ✅ IMPORTANT: disable CSP for ALL code paths
     res.removeHeader("Content-Security-Policy");
     res.removeHeader("X-Content-Security-Policy");
     res.removeHeader("X-WebKit-CSP");
 
     const { paymentId } = req.params;
     const { admissionNo, dob } = req.query;
-    console.log("Receipt hit for:", paymentId);
 
-    // 1️⃣ Fetch payment
     const payment = await prisma.payment.findUnique({
       where: { id: paymentId },
     });
@@ -22,28 +19,21 @@ export const getReceipt = async (req, res) => {
       return res.status(404).json({ error: "Receipt not available" });
     }
 
-    /* =========================
-       ADMIN ACCESS CHECK
-    ========================= */
-
     const authHeader = req.headers.authorization;
 
     if (authHeader?.startsWith("Bearer ")) {
       try {
         const token = authHeader.split(" ")[1];
-        jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // ✅ Admin verified
-        await generateReceiptPDF(paymentId, res);
-        return;
+        if (decoded.role === "admin") {
+          await generateReceiptPDF(paymentId, res);
+          return;
+        }
       } catch {
-        // fall through to parent check
+        // fall through to guardian verification
       }
     }
-
-    /* =========================
-       PARENT ACCESS CHECK
-    ========================= */
 
     if (!admissionNo || !dob) {
       return res.status(403).json({ error: "Access denied" });
@@ -69,7 +59,6 @@ export const getReceipt = async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // ✅ Parent verified
     await generateReceiptPDF(paymentId, res);
   } catch (err) {
     console.error(err);

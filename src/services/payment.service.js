@@ -33,6 +33,33 @@ const MONTH_TO_NUMBER = {
   DEC: 12,
 };
 
+const VALID_PAYMENT_TYPES = new Set(["FULL", "MONTHS"]);
+
+const normalizeMonths = (months) => {
+  if (!Array.isArray(months)) return [];
+
+  return [...new Set(
+    months
+      .map((month) => String(month || "").trim().toUpperCase())
+      .filter((month) => MONTH_ORDER.includes(month)),
+  )];
+};
+
+const getApplicableMonthsInOrder = (feeStartMonth) => {
+  const startIndex = MONTH_ORDER.findIndex(
+    (month) => MONTH_TO_NUMBER[month] === feeStartMonth,
+  );
+
+  if (startIndex === -1) {
+    throw new Error("Invalid fee start month configuration");
+  }
+
+  return MONTH_ORDER.slice(startIndex);
+};
+
+const buildReceiptNumber = (payment) =>
+  `TPS/${payment.academicYear}/${String(payment.id).replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+
 /* =========================
    Applicable Months Calculator
 ========================= */
@@ -54,6 +81,10 @@ const calculatePaymentDetails = async (
   tx,
   { admissionNo, academicYear, paymentType, months, skipPendingCheck = false },
 ) => {
+  if (!VALID_PAYMENT_TYPES.has(paymentType)) {
+    throw new Error("Invalid payment type");
+  }
+
   const feeAccount = await tx.studentFeeAccount.findUnique({
     where: { admissionNo_academicYear: { admissionNo, academicYear } },
   });
@@ -84,9 +115,25 @@ const calculatePaymentDetails = async (
 
   if (paymentType === "FULL") {
     amountToPay = feeAccount.balance;
-    monthsCovered = []; // Usually left empty for full clear, or filled with remaining
+    const confirmedPayments = await tx.payment.findMany({
+      where: { admissionNo, academicYear, status: "CONFIRMED" },
+      select: { monthsCovered: true },
+    });
+
+    const paidMonthsSet = new Set();
+    confirmedPayments.forEach((payment) => {
+      if (Array.isArray(payment.monthsCovered)) {
+        payment.monthsCovered.forEach((month) => paidMonthsSet.add(month));
+      }
+    });
+
+    monthsCovered = getApplicableMonthsInOrder(academic.feeStartMonth).filter(
+      (month) => !paidMonthsSet.has(month),
+    );
   } else if (paymentType === "MONTHS") {
-    if (!Array.isArray(months) || months.length === 0) {
+    const normalizedMonths = normalizeMonths(months);
+
+    if (normalizedMonths.length === 0) {
       throw new Error("Months required for MONTHS payment");
     }
 
@@ -101,28 +148,23 @@ const calculatePaymentDetails = async (
       }
     });
 
-    const startIndex = MONTH_ORDER.findIndex(
-      (m) => MONTH_TO_NUMBER[m] === academic.feeStartMonth,
-    );
-    if (startIndex === -1)
-      throw new Error("Invalid fee start month configuration");
-
-    // Filter order to get only unpaid months
-    const unpaidMonthsInOrder = MONTH_ORDER.slice(startIndex).filter(
+    const unpaidMonthsInOrder = getApplicableMonthsInOrder(
+      academic.feeStartMonth,
+    ).filter(
       (m) => !paidMonthsSet.has(m),
     );
     const firstUnpaidMonth = unpaidMonthsInOrder[0];
 
     // Validation: Prevent skipping months
-    if (!months.includes(firstUnpaidMonth)) {
+    if (!normalizedMonths.includes(firstUnpaidMonth)) {
       throw new Error(
         `Please clear earlier dues first. Pending from ${firstUnpaidMonth}.`,
       );
     }
 
     // Validation: Ensure selection is consecutive
-    for (let i = 0; i < months.length; i++) {
-      if (months[i] !== unpaidMonthsInOrder[i]) {
+    for (let i = 0; i < normalizedMonths.length; i++) {
+      if (normalizedMonths[i] !== unpaidMonthsInOrder[i]) {
         throw new Error("Selected months must be consecutive unpaid months");
       }
     }
@@ -137,12 +179,12 @@ const calculatePaymentDetails = async (
      * to ensure the sum of individual payments equals the total fee.
      */
     amountToPay = Math.round(
-      (feeAccount.totalFee / applicableMonthsCount) * months.length,
+      (feeAccount.totalFee / applicableMonthsCount) * normalizedMonths.length,
     );
 
     // Ensure we don't accidentally ask for more than the current balance due to rounding
     amountToPay = Math.min(amountToPay, feeAccount.balance);
-    monthsCovered = months;
+    monthsCovered = normalizedMonths;
   }
 
   if (amountToPay <= 0) throw new Error("Invalid payment amount");
@@ -197,10 +239,15 @@ export const submitPaymentProofService = async (data, screenshotUrl) => {
     }
   }
 
-  if (!utrNumber) throw new Error("UTR number required");
+  const normalizedUTR = String(utrNumber || "").trim().toUpperCase();
+
+  if (!normalizedUTR) throw new Error("UTR number required");
+  if (normalizedUTR.length < 6 || normalizedUTR.length > 30) {
+    throw new Error("UTR number must be between 6 and 30 characters");
+  }
 
   // Check for duplicate UTR to prevent double submission
-  const duplicateUTR = await prisma.payment.findFirst({ where: { utrNumber } });
+  const duplicateUTR = await prisma.payment.findFirst({ where: { utrNumber: normalizedUTR } });
   if (duplicateUTR)
     throw new Error("This UTR number has already been submitted.");
 
@@ -219,7 +266,7 @@ export const submitPaymentProofService = async (data, screenshotUrl) => {
       mode: "UPI",
       status: "PAYMENT_SUBMITTED",
       monthsCovered,
-      utrNumber,
+      utrNumber: normalizedUTR,
       screenshotUrl,
     },
   });
@@ -229,20 +276,37 @@ export const submitPaymentProofService = async (data, screenshotUrl) => {
    ADMIN CONFIRM UPI PAYMENT
 ========================= */
 export const confirmUPIPaymentService = async (paymentId, adminId) => {
-  const payment = await prisma.payment.findUnique({
-    where: { id: paymentId },
-  });
-
-  if (!payment || payment.status !== "PAYMENT_SUBMITTED") {
-    throw new Error("Payment not found or already processed");
-  }
-
   return prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment || payment.status !== "PAYMENT_SUBMITTED") {
+      throw new Error("Payment not found or already processed");
+    }
+
+    const feeAccount = await tx.studentFeeAccount.findUnique({
+      where: {
+        admissionNo_academicYear: {
+          admissionNo: payment.admissionNo,
+          academicYear: payment.academicYear,
+        },
+      },
+    });
+
+    if (!feeAccount) {
+      throw new Error("Fee account not found");
+    }
+
+    if (payment.amount > feeAccount.balance) {
+      throw new Error("Payment amount exceeds the current outstanding balance. Review discounts or other payments first.");
+    }
+
     const updatedPayment = await tx.payment.update({
       where: { id: paymentId },
       data: {
         status: "CONFIRMED",
-        receiptNumber: `TPS/${payment.academicYear}/${Date.now()}`,
+        receiptNumber: buildReceiptNumber(payment),
         collectedBy: adminId,
       },
     });
@@ -255,8 +319,9 @@ export const confirmUPIPaymentService = async (paymentId, adminId) => {
         },
       },
       data: {
-        totalPaid: { increment: payment.amount },
-        balance: { decrement: payment.amount },
+        totalPaid: feeAccount.totalPaid + payment.amount,
+        balance: Math.max(0, feeAccount.balance - payment.amount),
+        status: feeAccount.balance - payment.amount <= 0 ? "CLOSED" : "OPEN",
       },
     });
 
@@ -281,7 +346,7 @@ export const createCashPaymentService = async (data, adminId) => {
       academicYear,
       paymentType,
       months,
-      skipPendingCheck: true,
+      skipPendingCheck: false,
     });
 
     const payment = await tx.payment.create({
@@ -296,20 +361,29 @@ export const createCashPaymentService = async (data, adminId) => {
       },
     });
 
-    const receiptNumber = `TPS/${academicYear}/${String(payment.id).padStart(6, "0")}`;
-
     const updatedPayment = await tx.payment.update({
       where: { id: payment.id },
-      data: { receiptNumber },
+      data: { receiptNumber: buildReceiptNumber(payment) },
     });
+
+    const feeAccount = await tx.studentFeeAccount.findUnique({
+      where: {
+        admissionNo_academicYear: { admissionNo, academicYear },
+      },
+    });
+
+    if (!feeAccount) {
+      throw new Error("Fee account not found");
+    }
 
     await tx.studentFeeAccount.update({
       where: {
         admissionNo_academicYear: { admissionNo, academicYear },
       },
       data: {
-        totalPaid: { increment: amountToPay },
-        balance: { decrement: amountToPay },
+        totalPaid: feeAccount.totalPaid + amountToPay,
+        balance: Math.max(0, feeAccount.balance - amountToPay),
+        status: feeAccount.balance - amountToPay <= 0 ? "CLOSED" : "OPEN",
       },
     });
 
