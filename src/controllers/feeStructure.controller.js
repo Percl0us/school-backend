@@ -15,7 +15,6 @@ export const listFeeStructures = async (req, res) => {
 
     res.json({ structures });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch fee structures" });
   }
 };
@@ -48,7 +47,6 @@ export const createFeeStructure = async (req, res) => {
     });
     res.status(201).json(feeStructure);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to create fee structure" });
   }
 };
@@ -75,7 +73,6 @@ export const updateFeeStructure = async (req, res) => {
     });
     res.json(feeStructure);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to update fee structure" });
   }
 };
@@ -92,7 +89,6 @@ export const deleteFeeStructure = async (req, res) => {
 
     res.json({ message: "Fee structure deleted" });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to delete fee structure" });
   }
 };

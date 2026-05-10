@@ -207,13 +207,6 @@ export const getFinanceOverviewService = async (academicYear) => {
     paymentMap.get(p.admissionNo).push(p);
   });
   // 5️⃣ Final structured result
-  console.log(
-    allPayments.map((p) => ({
-      admissionNo: p.admissionNo,
-      utr: p.utrNumber,
-      screenshot: p.screenshotUrl,
-    })),
-  );
   return academics.map((a) => {
     const fee = feeMap.get(a.admissionNo);
     const discount = discountMap.get(a.admissionNo) || 0;

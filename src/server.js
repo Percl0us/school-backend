@@ -45,6 +45,9 @@ app.get("/favicon.ico", (_, res) => res.status(204).end());
 
 /* Server */
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
+app.listen(PORT, () => {});
+
+process.on("SIGINT", async () => {
+  await prisma.$disconnect();
+  process.exit(0);
 });

@@ -112,7 +112,6 @@ export const studentLogin = async (req, res) => {
       payments,
     });
   } catch (err) {
-    console.error("Student login error:", err);
     res.status(500).json({ error: "Something went wrong" });
   }
 };

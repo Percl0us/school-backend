@@ -61,7 +61,6 @@ export const getReceipt = async (req, res) => {
 
     await generateReceiptPDF(paymentId, res);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Something went wrong" });
   }
 };

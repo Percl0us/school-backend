@@ -26,7 +26,6 @@ export const createAcademicSession = async (req, res) => {
 
     res.status(201).json(session);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to create academic session" });
   }
 };
@@ -39,7 +38,6 @@ export const getAllAcademicSessions = async (req, res) => {
 
     res.json(sessions);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch academic sessions" });
   }
 };
@@ -57,7 +55,6 @@ export const getActiveAcademicSession = async (req, res) => {
 
     res.json(session);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch active session" });
   }
 };
@@ -79,7 +76,6 @@ export const updateAcademicSession = async (req, res) => {
 
     res.json(session);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to update academic session" });
   }
 };
@@ -94,7 +90,6 @@ export const deleteAcademicSession = async (req, res) => {
 
     res.json({ message: "Academic session deleted" });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to delete academic session" });
   }
 };

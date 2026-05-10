@@ -21,8 +21,6 @@ export const createNotice = async (req, res) => {
   try {
     const { title, date, type } = req.body;
 
-    console.log("BODY:", req.body); // 👈 add this
-
     if (!title || !date || !type) {
       return res.status(400).json({
         error: "All fields are required",
@@ -42,8 +40,6 @@ export const createNotice = async (req, res) => {
       data: notice,
     });
   } catch (err) {
-    console.error("CREATE NOTICE ERROR:", err); // 👈 THIS LINE
-
     res.status(500).json({
       error: err.message,
     });

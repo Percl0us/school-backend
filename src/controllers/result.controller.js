@@ -17,12 +17,16 @@ const normalizeSubjectsPayload = (subjects) => {
   return subjects.map((subject, index) => {
     const name = String(subject.name || subject.subject || "").trim();
     const maxMarksValue =
-      subject.maxMarks === undefined || subject.maxMarks === null || subject.maxMarks === ""
+      subject.maxMarks === undefined ||
+      subject.maxMarks === null ||
+      subject.maxMarks === ""
         ? 100
         : Number(subject.maxMarks);
     const marksRaw = subject.marksObtained ?? subject.marks ?? null;
     const marksObtained =
-      marksRaw === "" || marksRaw === undefined || marksRaw === null ? null : Number(marksRaw);
+      marksRaw === "" || marksRaw === undefined || marksRaw === null
+        ? null
+        : Number(marksRaw);
     const grade = String(subject.grade || "").trim();
 
     if (!name) {
@@ -34,8 +38,14 @@ const normalizeSubjectsPayload = (subjects) => {
     }
 
     if (marksObtained !== null) {
-      if (!Number.isFinite(marksObtained) || marksObtained < 0 || marksObtained > maxMarksValue) {
-        throw new Error(`Marks for ${name} must be between 0 and ${maxMarksValue}`);
+      if (
+        !Number.isFinite(marksObtained) ||
+        marksObtained < 0 ||
+        marksObtained > maxMarksValue
+      ) {
+        throw new Error(
+          `Marks for ${name} must be between 0 and ${maxMarksValue}`,
+        );
       }
     }
 
@@ -43,7 +53,10 @@ const normalizeSubjectsPayload = (subjects) => {
       name,
       maxMarks: maxMarksValue,
       marksObtained,
-      grade: marksObtained === null ? grade || "AB" : grade || calculateGrade(marksObtained),
+      grade:
+        marksObtained === null
+          ? grade || "AB"
+          : grade || calculateGrade(marksObtained),
     };
   });
 };
@@ -62,7 +75,6 @@ export const getAllStudentResults = async (req, res) => {
 
     res.json(results);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch results" });
   }
 };
@@ -88,7 +100,6 @@ export const getStudentResultsByYear = async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch results" });
   }
 };
@@ -102,7 +113,9 @@ export const createResult = async (req, res) => {
     const subjects = normalizeSubjectsPayload(req.body.subjects);
 
     if (!admissionNo || !academicYear) {
-      return res.status(400).json({ error: "Admission number and academic year are required" });
+      return res
+        .status(400)
+        .json({ error: "Admission number and academic year are required" });
     }
 
     const student = await prisma.student.findUnique({
@@ -138,8 +151,9 @@ export const createResult = async (req, res) => {
 
     res.status(201).json(result);
   } catch (err) {
-    console.error(err);
-    res.status(err.message ? 400 : 500).json({ error: err.message || "Failed to create result" });
+    res
+      .status(err.message ? 400 : 500)
+      .json({ error: err.message || "Failed to create result" });
   }
 };
 
@@ -168,10 +182,15 @@ export const updateResult = async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error(err);
-    res.status(err.message?.includes("required") || err.message?.includes("Marks") || err.message?.includes("Subject")
-      ? 400
-      : 500).json({ error: err.message || "Failed to update result" });
+    res
+      .status(
+        err.message?.includes("required") ||
+          err.message?.includes("Marks") ||
+          err.message?.includes("Subject")
+          ? 400
+          : 500,
+      )
+      .json({ error: err.message || "Failed to update result" });
   }
 };
 
@@ -180,7 +199,9 @@ export const getAdminStudentResult = async (req, res) => {
     const { admissionNo, academicYear } = req.params;
 
     if (!admissionNo || !academicYear) {
-      return res.status(400).json({ error: "Admission number and academic year are required" });
+      return res
+        .status(400)
+        .json({ error: "Admission number and academic year are required" });
     }
 
     const [student, academic, feeStructure, result] = await Promise.all([
@@ -219,12 +240,18 @@ export const getAdminStudentResult = async (req, res) => {
     }
 
     if (!academic) {
-      return res.status(404).json({ error: "Student is not enrolled in this academic year" });
+      return res
+        .status(404)
+        .json({ error: "Student is not enrolled in this academic year" });
     }
 
-    const definedSubjects = Array.isArray(feeStructure?.subjects) ? feeStructure.subjects : [];
+    const definedSubjects = Array.isArray(feeStructure?.subjects)
+      ? feeStructure.subjects
+      : [];
     const subjects =
-      result?.subjects && Array.isArray(result.subjects) && result.subjects.length > 0
+      result?.subjects &&
+      Array.isArray(result.subjects) &&
+      result.subjects.length > 0
         ? result.subjects
         : definedSubjects.map((name) => ({
             name,
@@ -242,7 +269,6 @@ export const getAdminStudentResult = async (req, res) => {
       subjects,
     });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch result" });
   }
 };
@@ -321,7 +347,6 @@ export const downloadMarksTemplate = async (req, res) => {
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to generate template" });
   }
 };
@@ -356,7 +381,6 @@ export const getClassesByAcademicYear = async (req, res) => {
 
     res.json(classes);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to fetch classes" });
   }
 };
@@ -511,7 +535,6 @@ export const validateAndPreviewMarks = async (req, res) => {
       subjects, // return subject list for preview
     });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to validate file" });
   }
 };
@@ -588,8 +611,6 @@ export const confirmMarksImport = async (req, res) => {
       summary: { total: results.length },
     });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to save marks" });
   }
 };
-
